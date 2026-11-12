@@ -112,11 +112,38 @@ def synthesize_a2ui(question: str, results: list[dict]) -> list[dict]:
         ],
         response_format={"type": "json_object"},
         temperature=0.1,
-        max_tokens=2048,
+        max_tokens=4096,
+        # Nemotron reasoning mode: thinking output would otherwise fill the
+        # response (and can leave `content` empty). Disable it explicitly.
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
-    raw = completion.choices[0].message.content
+    choice = completion.choices[0]
+    msg = choice.message
+    raw = msg.content
+    log.info(
+        "Nemotron call: finish_reason=%s content_len=%s reasoning_present=%s usage=%s",
+        choice.finish_reason,
+        len(raw) if raw else 0,
+        bool(getattr(msg, "reasoning_content", None) or getattr(msg, "model_extra", {}).get("reasoning_content")),
+        getattr(completion, "usage", None),
+    )
     if not raw:
-        raise RuntimeError("Model returned empty content")
+        reasoning = getattr(msg, "reasoning_content", None) or getattr(msg, "model_extra", {}).get(
+            "reasoning_content"
+        )
+        if reasoning:
+            # The model answered inside its thinking channel — try to pull the JSON out.
+            start, end = reasoning.find("["), reasoning.rfind("]")
+            if start != -1 and end > start:
+                raw = reasoning[start : end + 1]
+        if not raw:
+            detail = f"finish_reason={choice.finish_reason}"
+            if reasoning:
+                detail += f", reasoning_content started with: {reasoning[:120]!r}"
+            raise RuntimeError(
+                f"Model returned empty content ({detail}). "
+                f"If finish_reason=length, raise max_tokens in app.py."
+            )
     parsed = json.loads(raw)
     # The model must return an array of A2UI messages; tolerate a single wrapped object.
     if isinstance(parsed, dict):
