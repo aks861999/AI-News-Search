@@ -1,0 +1,4 @@
+ai-resources/
+ai/
+.claude/
+__pycache__/
