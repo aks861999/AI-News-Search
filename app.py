@@ -133,9 +133,21 @@ _EMBED_TEMPLATE_PATH = os.path.join(
 )
 
 
+def _embed_mtime() -> float:
+    """Mtime of the embed build, so the cache invalidates when it's rebuilt."""
+    try:
+        return os.path.getmtime(_EMBED_TEMPLATE_PATH)
+    except OSError:
+        return 0.0
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_embed_template() -> str | None:
-    """Load the built A2UI embed page (with a __A2UI_MESSAGES__ placeholder)."""
+def load_embed_template(_mtime: float) -> str | None:
+    """Load the built A2UI embed page (with a __A2UI_MESSAGES__ placeholder).
+
+    The _mtime argument (not used directly) busts the cache whenever the
+    embed build appears or is rebuilt.
+    """
     try:
         with open(_EMBED_TEMPLATE_PATH, encoding="utf-8") as f:
             return f.read()
@@ -148,7 +160,7 @@ def render_a2ui_iframe(a2ui_messages: list[dict], height: int = 560) -> bool:
 
     Returns False if the embed build is missing.
     """
-    template = load_embed_template()
+    template = load_embed_template(_embed_mtime())
     if template is None:
         return False
     payload = json.dumps(a2ui_messages).replace("</script>", "<\\/script>")
